@@ -44,8 +44,8 @@ import time
 import jax
 
 # ----------------------------- config -----------------------------
-TIMESTEPS = int(os.environ.get("TIMESTEPS", 5_000_000))
-NUM_ENVS = int(os.environ.get("NUM_ENVS", 2048))
+TIMESTEPS = int(os.environ.get("TIMESTEPS", 200_000_000))  # Playground tuned value
+NUM_ENVS = int(os.environ.get("NUM_ENVS", 0))  # 0 = use tuned default (8192)
 EPISODE_LENGTH = int(os.environ.get("EPISODE_LENGTH", 1000))
 EVAL_ENVS = int(os.environ.get("EVAL_ENVS", 256))
 MODE = os.environ.get("MODE", "ice").lower()
@@ -105,26 +105,32 @@ def main() -> None:
           f"({time.time()-t0:.0f}s)", flush=True)
     progress.append({"step": int(step), "reward": r, "episode_length": el})
 
+  # Start from Playground's TUNED config for this robot rather than
+  # hand-picked numbers. Our first attempt used 15M steps, 2048 envs, and no
+  # value_obs_key -- 8% of the required training, a quarter of the envs, and a
+  # critic that could not see the privileged observation. It plateaued at 61
+  # steps of survival and 0% success at every friction level.
+  from mujoco_playground.config import locomotion_params
+  ppo_cfg = locomotion_params.brax_ppo_config("G1JoystickFlatTerrain")
+
+  net_cfg = dict(ppo_cfg.network_factory)
+  del ppo_cfg["network_factory"]
+  train_kwargs = dict(ppo_cfg)
+  train_kwargs["num_timesteps"] = TIMESTEPS
+  if NUM_ENVS:
+    train_kwargs["num_envs"] = NUM_ENVS
+  train_kwargs["episode_length"] = EPISODE_LENGTH
+
+  print("ppo config:", json.dumps(
+      {k: v for k, v in train_kwargs.items() if isinstance(v, (int, float, str))},
+      indent=2), flush=True)
+  print("network:", net_cfg, flush=True)
+
   make_inference_fn, params, _ = ppo.train(
       environment=env,
       eval_env=eval_env,
-      num_timesteps=TIMESTEPS,
-      num_evals=10,
-      episode_length=EPISODE_LENGTH,
-      num_envs=NUM_ENVS,
-      batch_size=256,
-      num_minibatches=32,
-      unroll_length=20,
-      num_updates_per_batch=4,
-      learning_rate=3e-4,
-      entropy_cost=1e-2,
-      discounting=0.97,
-      reward_scaling=1.0,
-      normalize_observations=True,
       network_factory=functools.partial(
-          ppo_networks.make_ppo_networks,
-          policy_hidden_layer_sizes=(512, 256, 128),
-          value_hidden_layer_sizes=(512, 256, 128),
+          ppo_networks.make_ppo_networks, **net_cfg
       ),
       randomization_fn=randomize,
       # Playground envs are MjxEnv, not brax envs -- brax's default wrapper
@@ -132,6 +138,7 @@ def main() -> None:
       wrap_env_fn=wrapper.wrap_for_brax_training,
       progress_fn=progress_fn,
       seed=0,
+      **train_kwargs,
   )
   train_secs = time.time() - t0
   print(f"training done in {train_secs:.0f}s", flush=True)
