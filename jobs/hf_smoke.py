@@ -166,8 +166,8 @@ if __name__ == "__main__":
   assert float(mu.min()) >= MIXED[0] - 1e-6 and float(mu.max()) <= MIXED[1] + 1e-6
 
   print("[5] running short PPO on G1 ice ...", flush=True)
-  import functools
   from brax.training.agents.ppo import train as ppo
+  from mujoco_playground import wrapper
   t0 = time.time()
   ppo.train(
       environment=env,
@@ -181,6 +181,10 @@ if __name__ == "__main__":
       episode_length=200,
       learning_rate=3e-4,
       randomization_fn=randomize_mixed,
+      # Playground envs are MjxEnv, not brax envs -- brax's default
+      # wrap_for_training reaches for env.sys and dies with
+      # AttributeError: 'Joystick' object has no attribute 'sys'.
+      wrap_env_fn=wrapper.wrap_for_brax_training,
       progress_fn=lambda s, met: print(
           f"    step={s} reward={float(met.get('eval/episode_reward', float('nan'))):.2f}",
           flush=True),
