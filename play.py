@@ -81,6 +81,7 @@ def main() -> None:
   )
   scene.apply(runner.model,
               ground=scene.SNOW if args.mu > 0.3 else scene.ICE)
+  scene.set_realtime_quality(runner.model)
 
   cmd = np.zeros(3, dtype=np.float32)
   flags = {"reset": False}
@@ -106,6 +107,17 @@ def main() -> None:
 
   key = jax.random.PRNGKey(0)
   dt = env.dt
+
+  # Warm up before the clock starts. The first inference triggers a JIT
+  # compile worth about a second; entering the realtime loop with that still
+  # pending means it immediately falls behind and stutters at startup.
+  print("compiling policy ...", flush=True)
+  for _ in range(20):
+    o = runner.observe(cmd)
+    key, k = jax.random.split(key)
+    a, _ = inference_fn(o, k)
+    runner.step(np.asarray(a))
+  runner.reset()
   print(f"mu={args.mu}  wind<={args.wind} m/s  kp x{args.kp_scale}")
   print("W/S fwd-back  A/D strafe  Q/E turn  X stop  R reset")
 
@@ -116,37 +128,48 @@ def main() -> None:
     viewer.cam.distance = 3.5
     viewer.cam.elevation = -12
 
-    while viewer.is_running():
-      t0 = time.time()
+    # Decoupled loop. Previously this ran one render per control step, which
+    # made the render rate *be* the physics rate -- so whenever sync() overran
+    # (9 ms mean, 31 ms worst on integrated graphics) the simulation itself
+    # stalled and the robot moved in slow motion. Now physics catches up to
+    # the wall clock independently, and we render whatever is left over.
+    sim_t = 0.0
+    wall0 = time.perf_counter()
+    MAX_CATCHUP = 6  # if we fall far behind, drop time instead of spiralling
 
+    while viewer.is_running():
       if flags["reset"]:
         runner.reset()
+        wall0 = time.perf_counter()
+        sim_t = 0.0
         flags["reset"] = False
 
-      if args.wind > 0:
-        wind_v += (args.wind * 0.5 - wind_v) * (dt / 2.0) + 8.0 * np.sqrt(dt) * rng.normal()
-        wind_v = float(np.clip(wind_v, 0.0, args.wind))
-        wind_th += 0.3 * np.sqrt(dt) * rng.normal()
-        mag = 0.5 * rho * cd * area * wind_v ** 2
-        force = np.array([mag * np.cos(wind_th), mag * np.sin(wind_th), 0.0])
-      else:
-        force = None
+      elapsed = time.perf_counter() - wall0
+      n = 0
+      while sim_t < elapsed and n < MAX_CATCHUP:
+        if args.wind > 0:
+          wind_v += (args.wind * 0.5 - wind_v) * (dt / 2.0) + 8.0 * np.sqrt(dt) * rng.normal()
+          wind_v = float(np.clip(wind_v, 0.0, args.wind))
+          wind_th += 0.3 * np.sqrt(dt) * rng.normal()
+          mag = 0.5 * rho * cd * area * wind_v ** 2
+          force = np.array([mag * np.cos(wind_th), mag * np.sin(wind_th), 0.0])
+        else:
+          force = None
 
-      obs = runner.observe(cmd)
-      key, act_key = jax.random.split(key)
-      action, _ = inference_fn(obs, act_key)
-      runner.step(np.asarray(action), wind_force=force)
+        obs = runner.observe(cmd)
+        key, act_key = jax.random.split(key)
+        action, _ = inference_fn(obs, act_key)
+        runner.step(np.asarray(action), wind_force=force)
+        if runner.fallen:
+          runner.reset()
+        sim_t += dt
+        n += 1
 
-      if runner.fallen:
-        runner.reset()
+      if sim_t < elapsed - 0.5:  # too far behind to recover; resync the clock
+        sim_t = elapsed
 
       viewer.cam.lookat[:] = runner.data.qpos[:3]
       viewer.sync()
-
-      # Native runs ~9x faster than realtime, so pace it to wall clock.
-      sleep = dt - (time.time() - t0)
-      if sleep > 0:
-        time.sleep(sleep)
 
 
 if __name__ == "__main__":
