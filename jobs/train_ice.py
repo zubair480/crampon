@@ -55,11 +55,23 @@ MODE = os.environ.get("MODE", "ice").lower()
 WIND = float(os.environ.get("WIND", "0" if os.environ.get("MODE","ice")=="dry" else "12"))
 REPO_ID = os.environ.get("REPO_ID", "Zubair480/crampon-g1-ice")
 SKIP_UPLOAD = os.environ.get("SKIP_UPLOAD", "") == "1"
+# Warm start: filename of a checkpoint in REPO_ID to resume from. Training ice
+# from scratch diverges -- an exploring policy on near-frictionless ground
+# generates enormous velocities, enormous observations, and the network goes
+# NaN. Starting from a policy that already walks keeps states in range.
+RESTORE = os.environ.get("RESTORE", "")
+# Friction band for this stage of the curriculum. Anneal across runs:
+#   0.20-0.60  ->  0.05-0.35  ->  0.02-0.20
+MU_LO = float(os.environ.get("MU_LO", 0)) or None
+MU_HI = float(os.environ.get("MU_HI", 0)) or None
+# Clip normalized observations. A single wild state on ice can otherwise blow
+# up the gradient and poison the weights permanently.
+OBS_CLIP = float(os.environ.get("OBS_CLIP", 10.0))
 # Each mu forces a recompile of the wrapped env, so a full 7-point sweep costs
 # real minutes. Keep it short for smoke runs.
 SWEEP_MUS = [float(x) for x in os.environ["SWEEP_MUS"].split(",")]     if os.environ.get("SWEEP_MUS") else None
 
-RUN_NAME = f"{MODE}-{TIMESTEPS//1000}k"
+RUN_NAME = os.environ.get("RUN_NAME") or f"{MODE}-{TIMESTEPS//1000}k"
 
 
 def main() -> None:
@@ -70,6 +82,7 @@ def main() -> None:
   assert jax.default_backend() == "gpu", "no GPU -- wrong flavor"
 
   from brax.io import model
+  from brax.training.acme import running_statistics
   from brax.training.agents.ppo import networks as ppo_networks
   from brax.training.agents.ppo import train as ppo
   from mujoco_playground import wrapper
@@ -79,10 +92,14 @@ def main() -> None:
   from crampon.eval import sweep
 
   # The only difference between the two arms.
-  if MODE == "dry":
-    randomize = make_randomizer(DRY, cold=False)
+  if MU_LO is not None and MU_HI is not None:
+    band, cold = (MU_LO, MU_HI), MODE != "dry"
+  elif MODE == "dry":
+    band, cold = DRY, False
   else:
-    randomize = make_randomizer(MIXED, cold=True)
+    band, cold = MIXED, True
+  print(f"friction band {band}  cold={cold}", flush=True)
+  randomize = make_randomizer(band, cold=cold)
 
   from crampon.ice_env import default_config as ice_default_config
   cfg = ice_default_config()
@@ -90,6 +107,13 @@ def main() -> None:
   cfg.wind_config.enable = WIND > 0.0
   print(f"wind: max {WIND:.1f} m/s "
         f"({0.5*0.45*1.0*0.5*WIND**2:.0f} N peak drag)", flush=True)
+
+  restore_params = None
+  if RESTORE:
+    from huggingface_hub import hf_hub_download
+    rp = hf_hub_download(repo_id=REPO_ID, filename=RESTORE)
+    restore_params = model.load_params(rp)
+    print(f"warm starting from {RESTORE}", flush=True)
 
   env = G1Ice(config=cfg)
   eval_env = G1Ice(config=cfg)
@@ -130,8 +154,13 @@ def main() -> None:
       environment=env,
       eval_env=eval_env,
       network_factory=functools.partial(
-          ppo_networks.make_ppo_networks, **net_cfg
+          ppo_networks.make_ppo_networks,
+          preprocess_observations_fn=functools.partial(
+              running_statistics.normalize, max_abs_value=OBS_CLIP
+          ),
+          **net_cfg
       ),
+      restore_params=restore_params,
       randomization_fn=randomize,
       # Playground envs are MjxEnv, not brax envs -- brax's default wrapper
       # reaches for env.sys and dies.
