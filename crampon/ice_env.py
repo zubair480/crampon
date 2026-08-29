@@ -65,6 +65,12 @@ class G1Ice(g1_joystick.Joystick):
       config: config_dict.ConfigDict = default_config(),
       config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
   ):
+    # Playground normally pulls the menagerie assets inside registry.load().
+    # Constructing this env directly bypasses that, and the G1 XML references
+    # meshes by relative path, so the model fails to open with a bare
+    # "Error opening file .../pelvis.STL". Make the env safe to build on its
+    # own -- it is a no-op once the assets are present.
+    mjx_env.ensure_menagerie_exists()
     super().__init__(
         task=task, config=config, config_overrides=config_overrides
     )
