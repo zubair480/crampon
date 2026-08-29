@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+logs/
+checkpoints/
+*.mp4
+*.png
+!docs/*.png
+mujoco_playground/
