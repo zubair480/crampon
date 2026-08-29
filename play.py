@@ -32,6 +32,7 @@ from mujoco_playground.config import locomotion_params
 
 from crampon.ice_env import G1Ice, default_config
 from crampon.native_runner import NativePolicyRunner
+from crampon import scene
 
 REPO_ID = "Zubair480/crampon-g1-ice"
 
@@ -58,8 +59,8 @@ def main() -> None:
   ap = argparse.ArgumentParser()
   ap.add_argument("--policy", default=None, help="local .pkl checkpoint")
   ap.add_argument("--repo", default=REPO_ID)
-  ap.add_argument("--filename", default="policy-ice-200000k.pkl")
-  ap.add_argument("--mu", type=float, default=0.05)
+  ap.add_argument("--filename", default="policy-dry-200000k.pkl")
+  ap.add_argument("--mu", type=float, default=0.6)
   ap.add_argument("--wind", type=float, default=12.0)
   ap.add_argument("--kp-scale", type=float, default=0.8, help="cold derate")
   args = ap.parse_args()
@@ -78,6 +79,8 @@ def main() -> None:
   runner = NativePolicyRunner(
       env, inference_fn, mu=args.mu, kp_scale=args.kp_scale
   )
+  scene.apply(runner.model,
+              ground=scene.SNOW if args.mu > 0.3 else scene.ICE)
 
   cmd = np.zeros(3, dtype=np.float32)
   flags = {"reset": False}
