@@ -25,15 +25,36 @@ def apply(model, ground=ICE, cold_light=True) -> None:
       break
 
   if floor is not None:
-    model.geom_matid[floor] = -1  # drop the checker material
-    model.geom_rgba[floor] = ground
+    matid = int(model.geom_matid[floor])
+    if matid >= 0:
+      # Tint the existing checker material rather than deleting it. Removing
+      # the material leaves a flat white plane against a white sky -- no
+      # horizon, no depth cue, and the robot appears to float in a void.
+      # Keeping the checker preserves the sense of a surface and of motion
+      # across it, which is the whole point of a locomotion demo.
+      model.mat_rgba[matid] = ground
+      model.mat_reflectance[matid] = 0.15  # ice is a little glossy
+    else:
+      model.geom_rgba[floor] = ground
 
   if cold_light and model.nlight > 0:
-    # Slight blue shift: high-altitude light is cold and very bright.
-    model.light_diffuse[:] = np.array([0.88, 0.92, 1.0]) * 1.05
-    model.light_ambient[:] = np.array([0.42, 0.46, 0.55])
+    model.light_diffuse[:] = np.array([0.88, 0.92, 1.0])
+    model.light_ambient[:] = np.array([0.38, 0.42, 0.50])
     model.light_specular[:] = np.array([0.30, 0.32, 0.38])
 
-  # Pale haze on the horizon, so the ground fades out like a snowfield.
-  model.vis.rgba.haze[:] = np.array([0.90, 0.94, 0.98, 1.0])
-  model.vis.map.haze = 0.25
+  model.vis.rgba.haze[:] = np.array([0.86, 0.91, 0.97, 1.0])
+  model.vis.map.haze = 0.20
+
+
+# Visual meshes live in group 2, collision proxies in group 3. Showing every
+# group draws the green collision capsules over the robot; showing none of
+# them (the viewer default) hides the robot entirely and leaves two dark
+# blobs. Groups 0-2 is the correct answer.
+VISUAL_GROUPS = (0, 1, 2)
+
+
+def set_visual_groups(opt) -> None:
+  """Show visual geometry, hide collision proxies."""
+  opt.geomgroup[:] = 0
+  for g in VISUAL_GROUPS:
+    opt.geomgroup[g] = 1

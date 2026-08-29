@@ -112,7 +112,7 @@ def main() -> None:
   with mujoco.viewer.launch_passive(
       runner.model, runner.data, key_callback=key_callback
   ) as viewer:
-    viewer.opt.geomgroup[:] = 1
+    scene.set_visual_groups(viewer.opt)
     viewer.cam.distance = 3.5
     viewer.cam.elevation = -12
 
