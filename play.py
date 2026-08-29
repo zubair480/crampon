@@ -18,6 +18,7 @@ Keys:  W/S forward-back   A/D strafe   Q/E turn   X stop   R reset
 """
 
 import argparse
+import time
 
 import jax
 import jax.numpy as jp
@@ -30,6 +31,7 @@ from brax.training.agents.ppo import networks as ppo_networks
 from mujoco_playground.config import locomotion_params
 
 from crampon.ice_env import G1Ice, default_config
+from crampon.native_runner import NativePolicyRunner
 
 REPO_ID = "Zubair480/crampon-g1-ice"
 
@@ -59,6 +61,7 @@ def main() -> None:
   ap.add_argument("--filename", default="policy-ice-200000k.pkl")
   ap.add_argument("--mu", type=float, default=0.05)
   ap.add_argument("--wind", type=float, default=12.0)
+  ap.add_argument("--kp-scale", type=float, default=0.8, help="cold derate")
   args = ap.parse_args()
 
   path = args.policy
@@ -68,68 +71,79 @@ def main() -> None:
     path = hf_hub_download(repo_id=args.repo, filename=args.filename)
 
   cfg = default_config()
-  cfg.wind_config.speed_range = [0.0, args.wind]
-  cfg.wind_config.enable = args.wind > 0
+  cfg.noise_config.level = 0.0  # real sensors bring their own noise
   env = G1Ice(config=cfg)
-  env._mjx_model = env.mjx_model.tree_replace(
-      {"pair_friction": env.mjx_model.pair_friction.at[0:2, 0:2].set(args.mu)}
-  )
 
   inference_fn = jax.jit(build_inference_fn(env, path))
-  reset_fn = jax.jit(env.reset)
-  step_fn = jax.jit(env.step)
+  runner = NativePolicyRunner(
+      env, inference_fn, mu=args.mu, kp_scale=args.kp_scale
+  )
 
-  rng = jax.random.PRNGKey(0)
-  state = reset_fn(rng)
-
-  cmd = np.zeros(3, dtype=np.float32)  # [lin_vel_x, lin_vel_y, ang_vel_yaw]
-  reset_flag = {"do": False}
+  cmd = np.zeros(3, dtype=np.float32)
+  flags = {"reset": False}
 
   def key_callback(keycode):
     c = chr(keycode) if 0 < keycode < 0x110000 else ""
-    step = 0.2
-    if c in "Ww": cmd[0] = min(cmd[0] + step, 1.0)
-    elif c in "Ss": cmd[0] = max(cmd[0] - step, -1.0)
-    elif c in "Aa": cmd[1] = min(cmd[1] + step, 0.5)
-    elif c in "Dd": cmd[1] = max(cmd[1] - step, -0.5)
-    elif c in "Qq": cmd[2] = min(cmd[2] + step, 1.0)
-    elif c in "Ee": cmd[2] = max(cmd[2] - step, -1.0)
+    s_ = 0.2
+    if c in "Ww": cmd[0] = min(cmd[0] + s_, 1.0)
+    elif c in "Ss": cmd[0] = max(cmd[0] - s_, -1.0)
+    elif c in "Aa": cmd[1] = min(cmd[1] + s_, 0.5)
+    elif c in "Dd": cmd[1] = max(cmd[1] - s_, -0.5)
+    elif c in "Qq": cmd[2] = min(cmd[2] + s_, 1.0)
+    elif c in "Ee": cmd[2] = max(cmd[2] - s_, -1.0)
     elif c in "Xx": cmd[:] = 0.0
-    elif c in "Rr": reset_flag["do"] = True
-    print(f"  command: vx={cmd[0]:+.1f} vy={cmd[1]:+.1f} wz={cmd[2]:+.1f}", flush=True)
+    elif c in "Rr": flags["reset"] = True
+    else: return
+    print(f"  cmd vx={cmd[0]:+.1f} vy={cmd[1]:+.1f} wz={cmd[2]:+.1f}", flush=True)
 
-  mj_model = env.mj_model
-  mj_data = mujoco.MjData(mj_model)
+  # Wind: Ornstein-Uhlenbeck gusts, same process the env trains with.
+  rho, cd, area = 0.45, 1.0, 0.5
+  wind_v, wind_th = args.wind * 0.5, 0.0
+  rng = np.random.default_rng(0)
 
-  print(f"mu={args.mu}  wind<={args.wind} m/s   W/S A/D Q/E to drive, X stop, R reset")
+  key = jax.random.PRNGKey(0)
+  dt = env.dt
+  print(f"mu={args.mu}  wind<={args.wind} m/s  kp x{args.kp_scale}")
+  print("W/S fwd-back  A/D strafe  Q/E turn  X stop  R reset")
 
   with mujoco.viewer.launch_passive(
-      mj_model, mj_data, key_callback=key_callback
+      runner.model, runner.data, key_callback=key_callback
   ) as viewer:
     viewer.opt.geomgroup[:] = 1
     viewer.cam.distance = 3.5
     viewer.cam.elevation = -12
 
     while viewer.is_running():
-      if reset_flag["do"]:
-        rng, k = jax.random.split(rng)
-        state = reset_fn(k)
-        reset_flag["do"] = False
+      t0 = time.time()
 
-      state.info["command"] = jp.array(cmd)
-      rng, act_key = jax.random.split(rng)
-      action, _ = inference_fn(state.obs, act_key)
-      state = step_fn(state, action)
+      if flags["reset"]:
+        runner.reset()
+        flags["reset"] = False
 
-      mj_data.qpos[:] = np.array(state.data.qpos)
-      mj_data.qvel[:] = np.array(state.data.qvel)
-      mujoco.mj_forward(mj_model, mj_data)
-      viewer.cam.lookat[:] = mj_data.qpos[:3]
+      if args.wind > 0:
+        wind_v += (args.wind * 0.5 - wind_v) * (dt / 2.0) + 8.0 * np.sqrt(dt) * rng.normal()
+        wind_v = float(np.clip(wind_v, 0.0, args.wind))
+        wind_th += 0.3 * np.sqrt(dt) * rng.normal()
+        mag = 0.5 * rho * cd * area * wind_v ** 2
+        force = np.array([mag * np.cos(wind_th), mag * np.sin(wind_th), 0.0])
+      else:
+        force = None
+
+      obs = runner.observe(cmd)
+      key, act_key = jax.random.split(key)
+      action, _ = inference_fn(obs, act_key)
+      runner.step(np.asarray(action), wind_force=force)
+
+      if runner.fallen:
+        runner.reset()
+
+      viewer.cam.lookat[:] = runner.data.qpos[:3]
       viewer.sync()
 
-      if float(state.done) > 0:
-        rng, k = jax.random.split(rng)
-        state = reset_fn(k)
+      # Native runs ~9x faster than realtime, so pace it to wall clock.
+      sleep = dt - (time.time() - t0)
+      if sleep > 0:
+        time.sleep(sleep)
 
 
 if __name__ == "__main__":
