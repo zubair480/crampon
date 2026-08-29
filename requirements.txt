@@ -7,6 +7,8 @@ jaxlib<0.10
 brax>=0.14.2
 playground==0.2.0
 huggingface_hub[cli]
+imageio[ffmpeg]
+matplotlib
 
 # GPU machines: replace the jax line above with
 #   jax[cuda12]<0.10
