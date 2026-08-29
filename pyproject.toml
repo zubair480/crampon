@@ -1,0 +1,16 @@
+[project]
+name = "crampon"
+version = "0.1.0"
+description = "Unitree G1 locomotion and fall recovery on ice, for Himalaya conditions"
+requires-python = ">=3.10"
+# Intentionally empty: jax/brax/playground versions are pinned by the caller
+# (requirements.txt locally, the PEP 723 header in jobs/*.py on HF Jobs).
+# Declaring them here would let the resolver drag in jax>=0.11 and break brax.
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["crampon"]
