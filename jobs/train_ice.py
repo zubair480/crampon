@@ -49,6 +49,10 @@ NUM_ENVS = int(os.environ.get("NUM_ENVS", 2048))
 EPISODE_LENGTH = int(os.environ.get("EPISODE_LENGTH", 1000))
 EVAL_ENVS = int(os.environ.get("EVAL_ENVS", 256))
 MODE = os.environ.get("MODE", "ice").lower()
+# Wind is a curriculum knob, not a constant. A policy that cannot yet stand
+# will never learn under 348 N gusts, so cap it during training and only
+# evaluate at full 200 km/h. WIND is the max gust speed in m/s; 0 disables.
+WIND = float(os.environ.get("WIND", "0" if os.environ.get("MODE","ice")=="dry" else "12"))
 REPO_ID = os.environ.get("REPO_ID", "Zubair480/crampon-g1-ice")
 SKIP_UPLOAD = os.environ.get("SKIP_UPLOAD", "") == "1"
 # Each mu forces a recompile of the wrapped env, so a full 7-point sweep costs
@@ -80,8 +84,15 @@ def main() -> None:
   else:
     randomize = make_randomizer(MIXED, cold=True)
 
-  env = G1Ice()
-  eval_env = G1Ice()
+  from crampon.ice_env import default_config as ice_default_config
+  cfg = ice_default_config()
+  cfg.wind_config.speed_range = [0.0, WIND]
+  cfg.wind_config.enable = WIND > 0.0
+  print(f"wind: max {WIND:.1f} m/s "
+        f"({0.5*0.45*1.0*0.5*WIND**2:.0f} N peak drag)", flush=True)
+
+  env = G1Ice(config=cfg)
+  eval_env = G1Ice(config=cfg)
   print(f"env ready | action_size={env.action_size}", flush=True)
 
   t0 = time.time()
