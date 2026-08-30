@@ -19,6 +19,8 @@ Observation noise is deliberately omitted -- it exists to harden training, and
 real hardware supplies its own.
 """
 
+import copy
+
 import mujoco
 import numpy as np
 
@@ -34,7 +36,13 @@ class NativePolicyRunner:
 
   def __init__(self, env, inference_fn, mu: float = 0.05, kp_scale: float = 1.0,
                gait_freq: float = 1.4, cold_scale=None):
-    self.model = env.mj_model
+    # DEEP COPY, not a reference. This class mutates friction, damping and
+    # servo gains in place; sharing env.mj_model meant every runner compounded
+    # the previous one's scaling. Across a sweep the joint friction was
+    # multiplied by 2.25 dozens of times until the robot was effectively
+    # welded rigid and never fell -- every measurement read exactly 500 with
+    # zero variance, which looked like a result and was an artefact.
+    self.model = copy.deepcopy(env.mj_model)
     self.data = mujoco.MjData(self.model)
     self.inference_fn = inference_fn
 
