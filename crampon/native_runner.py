@@ -33,7 +33,7 @@ class NativePolicyRunner:
   """Steps native MuJoCo with a trained policy in the loop."""
 
   def __init__(self, env, inference_fn, mu: float = 0.05, kp_scale: float = 1.0,
-               gait_freq: float = 1.4):
+               gait_freq: float = 1.4, cold_scale=None):
     self.model = env.mj_model
     self.data = mujoco.MjData(self.model)
     self.inference_fn = inference_fn
@@ -43,14 +43,30 @@ class NativePolicyRunner:
     self._ctrl_dt = float(env.dt)
     self._n_substeps = int(env.n_substeps)
 
-    # Ice + cold, applied to the native model.
+    # Ice + cold, applied to the native model. cold_scale replicates what
+    # randomize_ice does during training: thickened grease raises joint dry
+    # friction and damping, battery sag lowers servo gain. Omitting these made
+    # native evaluation disagree with the MJX sweep.
     self.model.pair_friction[0:2, 0:2] = mu
     if kp_scale != 1.0:
       self.model.actuator_gainprm[:, 0] *= kp_scale
       self.model.actuator_biasprm[:, 1] *= kp_scale
+    if cold_scale is not None:
+      fl, dmp = cold_scale
+      self.model.dof_frictionloss[6:] *= fl
+      self.model.dof_damping[6:] *= dmp
 
     self._gyro = _sensor_slice(self.model, "gyro_pelvis")
     self._linvel = _sensor_slice(self.model, "local_linvel_pelvis")
+    # Termination sensors, matching joystick._get_termination exactly.
+    self._up_torso = _sensor_slice(self.model, "upvector_torso")
+    self._selfcontact = [
+        _sensor_slice(self.model, n) for n in (
+            "right_foot_left_foot_found",
+            "left_foot_right_shin_found",
+            "right_foot_left_shin_found",
+        )
+    ]
     self._imu_site = env._pelvis_imu_site_id
     self._torso_body = env._torso_body_id
 
@@ -106,6 +122,19 @@ class NativePolicyRunner:
 
   @property
   def fallen(self) -> bool:
-    """Torso pitched over or dropped -- matches the env's termination idea."""
-    up = self.data.site_xmat[self._imu_site].reshape(3, 3).T @ np.array([0.0, 0.0, -1.0])
-    return bool(up[2] > 0.0 or self.data.qpos[2] < 0.4)
+    """Exactly joystick._get_termination: torso up-vector flipped, or a
+    self-collision between feet and shins, or NaN.
+
+    Note there is NO height threshold. An earlier version of this used
+    qpos[2] < 0.4 as a proxy for "fallen", which was invented rather than
+    taken from the env -- and it scored the ice policy's low, wide crouch as
+    a fall. That single wrong line made a policy that survives 62% LONGER by
+    the real metric look like it lost on 12 seeds out of 12.
+    """
+    d = self.data
+    if d.sensordata[self._up_torso][-1] < 0.0:
+      return True
+    for s in self._selfcontact:
+      if d.sensordata[s][0] > 0:
+        return True
+    return bool(not np.isfinite(d.qpos).all() or not np.isfinite(d.qvel).all())
