@@ -167,14 +167,19 @@ class G1Getup(g1_base.G1Env):
     # force| and squared joint acceleration; for a fallen humanoid with
     # randomized joints those reach enormous values, and the resulting reward
     # of -87 at step 0 blew the network weights to NaN within 6M steps.
-    reward = jp.clip(sum(rewards.values()), -1.0, 1.0)
+    reward = jp.clip(jp.nan_to_num(sum(rewards.values()), nan=0.0,
+                                   posinf=0.0, neginf=0.0), -1.0, 1.0)
 
     state.info["last_last_act"] = state.info["last_act"]
     state.info["last_act"] = action
     for k, v in rewards.items():
       state.metrics[f"reward/{k}"] = v
 
-    done = jp.isnan(data.qpos).any() | jp.isnan(data.qvel).any()
+    # Terminate on divergence BEFORE it becomes NaN: a humanoid joint moving
+    # at 200 rad/s is already a blown-up simulation, not a fall.
+    diverged = (jp.abs(data.qvel).max() > 200.0) | (jp.abs(data.qpos[2]) > 20.0)
+    done = (jp.isnan(data.qpos).any() | jp.isnan(data.qvel).any()
+            | jp.isinf(data.qpos).any() | jp.isinf(data.qvel).any() | diverged)
     return state.replace(data=data, obs=obs, reward=reward,
                          done=done.astype(reward.dtype))
 
@@ -187,7 +192,15 @@ class G1Getup(g1_base.G1Env):
     state = jp.hstack([gyro, gravity, joint_angles, joint_vel,
                        info["last_act"]])
     privileged = jp.hstack([state, data.qpos[2:3], data.qvel[0:6]])
-    return {"state": state, "privileged_state": privileged}
+    # Sanitise. The env terminates on NaN in qpos/qvel, but the observation is
+    # built BEFORE that check and still enters the rollout buffer -- and
+    # jp.clip passes NaN straight through (clip(nan,-10,10) == nan), so a
+    # single diverging env poisons the gradient and the weights go NaN for
+    # good. This is what killed four training runs; bounding the reward and
+    # clipping observations could not fix it because neither touches NaN.
+    clean = lambda v: jp.clip(jp.nan_to_num(v, nan=0.0, posinf=0.0,
+                                            neginf=0.0), -50.0, 50.0)
+    return {"state": clean(state), "privileged_state": clean(privileged)}
 
   # --- rewards -------------------------------------------------------------
   def _get_reward(self, data, action, info) -> Dict[str, jax.Array]:
