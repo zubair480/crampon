@@ -30,8 +30,8 @@ ROUGH_SCENE = "scene_mjx_feetonly_rough_terrain.xml"
 # meshes: MJX contact cost scales badly with convex meshes, and for getup what
 # matters is that limbs CAN push off the ground, not millimetre accuracy.
 NEW_GEOMS = [
-    ("pelvis", "pelvis_collision", 0.09, "0 0 -0.02 0 0 0.06"),
-    ("torso_link", "torso_collision", 0.10, "0 0 0.06 0 0 0.26"),
+    ("pelvis", "pelvis_collision", 0.07, "0 0 0.02 0 0 0.10"),
+    ("torso_link", "torso_collision", 0.09, "0 0 0.10 0 0 0.28"),
     ("left_elbow_link", "left_forearm", 0.045, "0 0 0 0.22 0 0"),
     ("right_elbow_link", "right_forearm", 0.045, "0 0 0 0.22 0 0"),
 ]

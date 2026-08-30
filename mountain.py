@@ -79,7 +79,7 @@ SCENE = """<mujoco model="g1 ice mountain">
     <light name="sun" pos="120 -180 260" dir="-0.35 0.5 -0.79" directional="true"
            diffuse="0.98 0.97 0.93" specular="0.30 0.30 0.28" castshadow="true"/>
     <geom name="snow" type="hfield" hfield="mountain" material="ice"
-          pos="0 0 0" contype="1" conaffinity="1" condim="3"
+          pos="0 0 0" contype="1" conaffinity="2" condim="3"
           friction="{mu} {tors} 0.001"
           priority="1" solref="0.02 1.0" solimp="0.9 0.99 0.004 0.5 2"/>
   </worldbody>
@@ -99,13 +99,30 @@ SCENE = """<mujoco model="g1 ice mountain">
 def build_model(mu: float = 0.35, mode: str = "feet", theta_deg: float = 200.0,
                 stand_h: float = 0.80, tors: float = 0.6) -> mujoco.MjModel:
   """mode='feet' for walking, 'body' for fall recovery."""
-  assert mode in ("feet", "body")
+  assert mode in ("feet", "body", "hybrid")
   assets = dict(g1_base.get_assets())
   with open(HFIELD, "rb") as f:
     assets["hfield_mountain.bin"] = f.read()
 
   robot = assets[getup_model.ROBOT_XML].decode()
-  if mode == "body":
+  if mode == "hybrid":
+    # Feet plus the torso/pelvis/forearm capsules, but NOT thigh or shin.
+    # Measured on this traverse: with every group-3 geom colliding the robot
+    # falls at step 55 even on grippy snow, because thighs and shins pass
+    # close to the ground during normal swing and catch. Those two are the
+    # only ones that break the gait; the upper-body capsules never touch while
+    # walking, and they are exactly what stops a fallen torso sinking through.
+    for b, n, sz, ft in getup_model.NEW_GEOMS:
+      robot = getup_model._insert_geom(robot, b, n, sz, ft)
+      robot = robot.replace(
+          f'<geom name="{n}" class="collision"',
+          f'<geom name="{n}" class="collision" contype="2" conaffinity="1" '
+          f'condim="3" friction="{mu} {tors} 0.001"')
+    robot = robot.replace(
+        '<geom size="0.085 0.03 0.005"/>',
+        '<geom size="0.085 0.03 0.005" contype="2" conaffinity="1" '
+        f'condim="3" friction="{mu} {tors} 0.001"/>')
+  elif mode == "body":
     for b, n, s, ft in getup_model.NEW_GEOMS:
       robot = getup_model._insert_geom(robot, b, n, s, ft)
     robot = robot.replace(
