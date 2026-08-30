@@ -49,16 +49,14 @@ def default_config() -> config_dict.ConfigDict:
               torso_height=1.0,
               posture=1.0,
               stand_still=1.0,
-              action_rate=-0.001,
-              dof_pos_limits=-0.1,
-              torques=-1e-5,
-              dof_acc=-2.5e-7,
-              dof_vel=-1e-3,
+              action_rate=-0.01,
+              dof_pos_limits=-0.02,
+              dof_vel=-0.02,
           ),
       ),
       impl="jax",
       naconmax=30 * 8192,
-      njmax=400,  # a fallen humanoid makes far more contacts than a walking one
+      njmax=600,  # a fallen humanoid makes far more contacts than a walking one
   )
 
 
@@ -152,7 +150,12 @@ class G1Getup(g1_base.G1Env):
     rewards = self._get_reward(data, action, state.info)
     rewards = {k: v * self._config.reward_config.scales[k]
                for k, v in rewards.items()}
-    reward = jp.clip(sum(rewards.values()) * self.dt, -10.0, 10.0)
+    # Every term below is bounded in roughly [0, 1], so the sum is bounded and
+    # gradients stay sane. The first attempt included raw sums of |actuator
+    # force| and squared joint acceleration; for a fallen humanoid with
+    # randomized joints those reach enormous values, and the resulting reward
+    # of -87 at step 0 blew the network weights to NaN within 6M steps.
+    reward = jp.clip(sum(rewards.values()), -1.0, 1.0)
 
     state.info["last_last_act"] = state.info["last_act"]
     state.info["last_act"] = action
@@ -189,11 +192,10 @@ class G1Getup(g1_base.G1Env):
         "posture": gate * jp.exp(
             -0.5 * jp.sum(jp.square(data.qpos[7:] - self._default_pose))),
         "stand_still": gate * jp.exp(-jp.sum(jp.square(action))),
-        "action_rate": jp.sum(jp.square(action - info["last_act"])),
-        "dof_pos_limits": jp.sum(
-            (data.qpos[7:] < self._soft_lowers)
-            | (data.qpos[7:] > self._soft_uppers)),
-        "torques": jp.sum(jp.abs(data.actuator_force)),
-        "dof_acc": jp.sum(jp.square(data.qacc[6:])),
-        "dof_vel": jp.sum(jp.square(data.qvel[6:])),
+        # Bounded regularizers only -- means not sums, and squashed.
+        "action_rate": jp.mean(jp.square(action - info["last_act"])),
+        "dof_pos_limits": jp.mean(
+            ((data.qpos[7:] < self._soft_lowers)
+             | (data.qpos[7:] > self._soft_uppers)).astype(jp.float32)),
+        "dof_vel": jp.tanh(jp.mean(jp.square(data.qvel[6:])) / 100.0),
     }
