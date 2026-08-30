@@ -181,6 +181,25 @@ def build_model(mu: float = 0.35, mode: str = "hybrid", start_x: float = -120.0,
           f'<geom name="{n}" class="collision"',
           f'<geom name="{n}" class="collision" contype="2" conaffinity="1" '
           f'condim="3" friction="{mu} {tors} 0.001"')
+    # Knee caps: contact when kneeling, clear while walking. Training and
+    # deployment must expose the same contacts or the getup policy reaches for
+    # geometry that is not there.
+    for b, n, sz, pos in getup_model.KNEE_GEOMS:
+      i = robot.index(f'<body name="{b}"')
+      j = robot.index(">", i) + 1
+      cap = (chr(10) + f'      <geom name="{n}" class="collision" '
+             f'type="sphere" size="{sz}" pos="{pos}" contype="2" '
+             f'conaffinity="1" condim="3" friction="{mu} {tors} 0.001"/>')
+      robot = robot[:j] + cap + robot[j:]
+
+    # Hands too: getup pushes off them, so deployment must expose the same
+    # contacts. Hands sit high during walking and cost nothing.
+    for hn in ("left_hand_collision", "right_hand_collision"):
+      robot = robot.replace(
+          f'<geom name="{hn}" class="collision"',
+          f'<geom name="{hn}" class="collision" contype="2" conaffinity="1" '
+          f'condim="3" friction="{mu} {tors} 0.001"')
+
   robot = robot.replace(
       '<geom size="0.085 0.03 0.005"/>',
       '<geom size="0.085 0.03 0.005" contype="2" conaffinity="1" '
