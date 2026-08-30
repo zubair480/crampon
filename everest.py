@@ -84,6 +84,33 @@ def seracs(n=26, seed=5):
   return out
 
 
+def boulders(n=70, seed=9):
+  """Rocks breaking through the snow along and beside the moraine.
+
+  Kept clear of the walking line itself -- the policy has never seen an
+  obstacle and would simply trip on every one, which is not the demo. They sit
+  beside the trail, which is also where they sit on the real moraine.
+  """
+  rng = np.random.default_rng(seed)
+  a = _grid()
+  res = a.shape[0]
+  mpp = SIZE_M / res
+  out = []
+  for _ in range(n):
+    x = rng.uniform(-165, 165)
+    side = rng.choice([-1.0, 1.0])
+    y = MORAINE_Y + float(wander(x)) + side * rng.uniform(4.5, 26.0)
+    cj = int(np.clip(round(x / mpp + (res - 1) / 2.0), 1, res - 2))
+    ci = int(np.clip(round(y / mpp + (res - 1) / 2.0), 1, res - 2))
+    z = float(a[ci, cj]) * RELIEF_M
+    r = rng.uniform(0.25, 1.1)
+    # Sunk 35-60% into the snow, so they read as embedded not dropped on top.
+    out.append((x, y, z + r * rng.uniform(0.40, 0.65), r,
+                rng.uniform(0.65, 1.0), rng.uniform(0.6, 1.0),
+                rng.uniform(0, 180), rng.uniform(-25, 25)))
+  return out
+
+
 SCENE = """<mujoco model="everest base camp approach">
   <include file="g1_mjx_feetonly.xml"/>
   <compiler autolimits="true"/>
@@ -109,6 +136,8 @@ SCENE = """<mujoco model="everest base camp approach">
               texuniform="false" specular="0.05" shininess="0.02"/>
     <material name="ice" rgba="0.80 0.90 0.97 1" specular="0.55"
               shininess="0.55" reflectance="0.06"/>
+    <material name="rock" rgba="0.33 0.31 0.29 1" specular="0.08"
+              shininess="0.05"/>
     <hfield name="ebc" file="hfield_everest.bin"
             size="{half} {half} {relief} 3.0"/>
   </asset>
@@ -119,6 +148,7 @@ SCENE = """<mujoco model="everest base camp approach">
           pos="0 0 0" contype="1" conaffinity="2" condim="3"
           friction="{mu} {tors} 0.001"/>
 {seracs}
+{boulders}
   </worldbody>
   <include file="sensor.xml"/>
   <keyframe>
@@ -170,9 +200,16 @@ def build_model(mu: float = 0.35, mode: str = "hybrid", start_x: float = -120.0,
       f'condim="3" friction="0.15 0.05 0.001"/>'
       for i, (x, y, z, w, d, h, ex, ey, ez) in enumerate(seracs(n_seracs)))
 
+  rocks = chr(10).join(
+      f'    <geom name="rock{i}" type="ellipsoid" material="rock" '
+      f'size="{r:.2f} {r*sy_:.2f} {r*sz_:.2f}" pos="{x:.2f} {y:.2f} {z:.2f}" '
+      f'euler="{ex:.0f} 0 {ez:.0f}" contype="1" conaffinity="2" condim="3" '
+      f'friction="0.8 0.4 0.001"/>'
+      for i, (x, y, z, r, sy_, sz_, ez, ex) in enumerate(boulders()))
+
   sx, sy, sz, _ = trail_point(start_x)
   yaw = 0.0  # walk east along the moraine
   xml = SCENE.format(half=SIZE_M / 2, relief=RELIEF_M, mu=mu, tors=tors,
-                     seracs=blocks, sx=sx, sy=sy, sz=sz + stand_h,
+                     seracs=blocks, boulders=rocks, sx=sx, sy=sy, sz=sz + stand_h,
                      qw=float(np.cos(yaw / 2)), qz=float(np.sin(yaw / 2)))
   return mujoco.MjModel.from_xml_string(xml, assets)
