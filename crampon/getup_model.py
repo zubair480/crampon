@@ -37,12 +37,16 @@ NEW_GEOMS = [
 ]
 
 # Everything that should be able to bear weight against the ice.
+# Deliberately EXCLUDES thigh and shin. The walking scene cannot enable those
+# -- they pass close to the ground during swing and destroy the gait -- so a
+# getup policy trained with knee contact learns to push off knees that are not
+# there at deployment. v6 stood up 16/16 on its own training ground and stayed
+# face-down on the Everest slope for exactly this reason. Feet, hands,
+# forearms, pelvis and torso only, matching mountain/everest hybrid mode.
 FLOOR_PAIRS = [
     "pelvis_collision", "torso_collision",
     "left_forearm", "right_forearm",
     "left_hand_collision", "right_hand_collision",
-    "left_thigh", "right_thigh",
-    "left_shin", "right_shin",
 ]
 
 

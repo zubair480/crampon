@@ -56,6 +56,11 @@ def default_config() -> config_dict.ConfigDict:
               torso_height=1.00,
               posture=0.35,
               stand_still=0.35,
+              # v6 converged to a very stable crouch at exactly 0.545 m on
+              # every seed. The ramp still rewards more height, but the crouch
+              # is a strong local optimum; this pays only once genuinely
+              # standing, so rising out of it is worth something discrete.
+              standing=0.60,
               action_rate=-0.01,
               dof_pos_limits=-0.02,
               dof_vel=-0.02,
@@ -175,7 +180,7 @@ class G1Getup(g1_base.G1Env):
     # Ceiling above the sum of the positive terms, so no single term can
     # saturate it and flatten the gradient on everything else.
     reward = jp.clip(jp.nan_to_num(sum(rewards.values()), nan=0.0,
-                                   posinf=0.0, neginf=0.0), -1.0, 2.0)
+                                   posinf=0.0, neginf=0.0), -1.0, 3.0)
 
     state.info["last_last_act"] = state.info["last_act"]
     state.info["last_act"] = action
@@ -222,6 +227,8 @@ class G1Getup(g1_base.G1Env):
     gate = upright * at_height  # posture only matters once actually standing
     return {
         "orientation": upright,
+        "standing": upright * jp.clip(
+            (height - 0.60) / (self._z_des - 0.60), 0.0, 1.0),
         # Monotonic in height, not a Gaussian around the target. A Gaussian is
         # almost flat at 0.11 m, so a lying robot gets essentially no signal
         # telling it which way is up; this pulls upward from the floor.
