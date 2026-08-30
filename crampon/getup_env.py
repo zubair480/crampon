@@ -47,10 +47,15 @@ def default_config() -> config_dict.ConfigDict:
       ),
       reward_config=config_dict.create(
           scales=config_dict.create(
-              orientation=1.0,
-              torso_height=1.0,
-              posture=1.0,
-              stand_still=1.0,
+              # Orientation deliberately WEAK relative to height. v5 learned
+              # to roll upright and stop: with orientation weighted 1.0 and the
+              # total clipped to 1.0, being upright saturated the reward and
+              # standing up earned nothing. Result was uprightness 0.975 with
+              # torso height 0.112 m -- it sat up and quit.
+              orientation=0.25,
+              torso_height=1.00,
+              posture=0.35,
+              stand_still=0.35,
               action_rate=-0.01,
               dof_pos_limits=-0.02,
               dof_vel=-0.02,
@@ -167,8 +172,10 @@ class G1Getup(g1_base.G1Env):
     # force| and squared joint acceleration; for a fallen humanoid with
     # randomized joints those reach enormous values, and the resulting reward
     # of -87 at step 0 blew the network weights to NaN within 6M steps.
+    # Ceiling above the sum of the positive terms, so no single term can
+    # saturate it and flatten the gradient on everything else.
     reward = jp.clip(jp.nan_to_num(sum(rewards.values()), nan=0.0,
-                                   posinf=0.0, neginf=0.0), -1.0, 1.0)
+                                   posinf=0.0, neginf=0.0), -1.0, 2.0)
 
     state.info["last_last_act"] = state.info["last_act"]
     state.info["last_act"] = action
@@ -211,11 +218,15 @@ class G1Getup(g1_base.G1Env):
     up = self.get_gravity(data, "torso")[-1]
     height = data.qpos[2]
     upright = jp.clip(up, 0.0, 1.0)
-    at_height = jp.exp(-10.0 * jp.square(height - self._z_des))
+    at_height = jp.exp(-8.0 * jp.square(height - self._z_des))
     gate = upright * at_height  # posture only matters once actually standing
     return {
         "orientation": upright,
-        "torso_height": jp.exp(-5.0 * jp.square(height - self._z_des)),
+        # Monotonic in height, not a Gaussian around the target. A Gaussian is
+        # almost flat at 0.11 m, so a lying robot gets essentially no signal
+        # telling it which way is up; this pulls upward from the floor.
+        "torso_height": jp.clip((height - 0.15) / (self._z_des - 0.15),
+                                0.0, 1.0),
         "posture": gate * jp.exp(
             -0.5 * jp.sum(jp.square(data.qpos[7:] - self._default_pose))),
         "stand_still": gate * jp.exp(-jp.sum(jp.square(action))),

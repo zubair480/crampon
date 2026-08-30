@@ -58,8 +58,12 @@ def main():
 
   walk_fn = jax.jit(build_inference_fn(
       env, hf_hub_download(repo_id=REPO, filename=a.walk)))
-  getup_fn = jax.jit(build_inference_fn(
-      env, hf_hub_download(repo_id=REPO, filename=a.getup)))
+  if a.getup == 'zero':
+    import jax.numpy as jp
+    getup_fn = lambda obs, k: (jp.zeros(env.action_size), {})   # plumbing stub
+  else:
+    getup_fn = jax.jit(build_inference_fn(
+        env, hf_hub_download(repo_id=REPO, filename=a.getup)))
 
   model = everest.build_model(mu=a.mu, mode="hybrid", start_x=a.start_x)
   r = NativePolicyRunner(env, walk_fn, mu=a.mu, kp_scale=0.8,
