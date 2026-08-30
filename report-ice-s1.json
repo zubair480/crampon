@@ -1,0 +1,166 @@
+{
+  "mode": "ice",
+  "timesteps": 100000000,
+  "num_envs": 0,
+  "train_seconds": 1139.9944489002228,
+  "progress": [
+    {
+      "step": 0,
+      "reward": 2.845712184906006,
+      "episode_length": 381.0859375
+    },
+    {
+      "step": 5406720,
+      "reward": 7.584613800048828,
+      "episode_length": 585.8671875
+    },
+    {
+      "step": 10813440,
+      "reward": 9.702367782592773,
+      "episode_length": 638.203125
+    },
+    {
+      "step": 16220160,
+      "reward": 8.386616706848145,
+      "episode_length": 574.484375
+    },
+    {
+      "step": 21626880,
+      "reward": 9.071849822998047,
+      "episode_length": 589.03125
+    },
+    {
+      "step": 27033600,
+      "reward": 9.70555305480957,
+      "episode_length": 658.109375
+    },
+    {
+      "step": 32440320,
+      "reward": 9.834491729736328,
+      "episode_length": 648.2109375
+    },
+    {
+      "step": 37847040,
+      "reward": 8.623687744140625,
+      "episode_length": 601.3828125
+    },
+    {
+      "step": 43253760,
+      "reward": 10.197746276855469,
+      "episode_length": 646.140625
+    },
+    {
+      "step": 48660480,
+      "reward": 9.50208854675293,
+      "episode_length": 609.9609375
+    },
+    {
+      "step": 54067200,
+      "reward": 10.785903930664062,
+      "episode_length": 685.5703125
+    },
+    {
+      "step": 59473920,
+      "reward": 9.909019470214844,
+      "episode_length": 658.2890625
+    },
+    {
+      "step": 64880640,
+      "reward": 9.272334098815918,
+      "episode_length": 637.3046875
+    },
+    {
+      "step": 70287360,
+      "reward": 9.799667358398438,
+      "episode_length": 627.0703125
+    },
+    {
+      "step": 75694080,
+      "reward": 9.211126327514648,
+      "episode_length": 603.8203125
+    },
+    {
+      "step": 81100800,
+      "reward": 10.516437530517578,
+      "episode_length": 675.2421875
+    },
+    {
+      "step": 86507520,
+      "reward": 8.924188613891602,
+      "episode_length": 602.09375
+    },
+    {
+      "step": 91914240,
+      "reward": 10.571300506591797,
+      "episode_length": 660.046875
+    },
+    {
+      "step": 97320960,
+      "reward": 11.109000205993652,
+      "episode_length": 681.0
+    },
+    {
+      "step": 102727680,
+      "reward": 10.251108169555664,
+      "episode_length": 661.4375
+    }
+  ],
+  "sweep": [
+    {
+      "mu": 0.02,
+      "success_rate": 0.0,
+      "mean_steps_alive": 197.875,
+      "mean_reward": -221.6700897216797,
+      "num_envs": 128,
+      "episode_length": 500
+    },
+    {
+      "mu": 0.05,
+      "success_rate": 0.0,
+      "mean_steps_alive": 147.6171875,
+      "mean_reward": -37.508663177490234,
+      "num_envs": 128,
+      "episode_length": 500
+    },
+    {
+      "mu": 0.1,
+      "success_rate": 0.0,
+      "mean_steps_alive": 185.4921875,
+      "mean_reward": -11.017685890197754,
+      "num_envs": 128,
+      "episode_length": 500
+    },
+    {
+      "mu": 0.2,
+      "success_rate": 0.0,
+      "mean_steps_alive": 400.5859375,
+      "mean_reward": 6.575041770935059,
+      "num_envs": 128,
+      "episode_length": 500
+    },
+    {
+      "mu": 0.35,
+      "success_rate": 0.0,
+      "mean_steps_alive": 476.625,
+      "mean_reward": 13.099945068359375,
+      "num_envs": 128,
+      "episode_length": 500
+    },
+    {
+      "mu": 0.5,
+      "success_rate": 0.0,
+      "mean_steps_alive": 480.921875,
+      "mean_reward": 13.532270431518555,
+      "num_envs": 128,
+      "episode_length": 500
+    },
+    {
+      "mu": 1.0,
+      "success_rate": 0.0,
+      "mean_steps_alive": 475.25,
+      "mean_reward": 12.9276123046875,
+      "num_envs": 128,
+      "episode_length": 500
+    }
+  ]
+}

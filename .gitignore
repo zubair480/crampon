@@ -7,3 +7,6 @@ checkpoints/
 *.png
 !docs/*.png
 mujoco_playground/
+
+# PowerPoint lock files
+~$*
