@@ -21,7 +21,26 @@ MIXED = (0.02, 0.35)  # ice -> packed snow, the training distribution
 DRY = (0.4, 1.0)  # stock Playground, kept for baseline runs
 
 
-def make_randomizer(mu_range=MIXED, cold=True):
+def floor_pair_ids(mj_model):
+  """Indices of every contact pair against the floor, found by name.
+
+  The stock G1 declares exactly two floor pairs and they happen to sit at
+  indices 0 and 1, which is why this module originally hardcoded
+  pair_friction[0:2]. The getup model adds ten more and the ordering shifts --
+  left_foot_floor lands at index 3. Hardcoding would then silently apply ice
+  friction to the wrong contacts, which is the kind of bug that produces a
+  plausible-looking result that is quietly measuring nothing.
+  """
+  import mujoco
+  ids = []
+  for i in range(mj_model.npair):
+    name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_PAIR, i)
+    if name and name.endswith("_floor"):
+      ids.append(i)
+  return ids
+
+
+def make_randomizer(mu_range=MIXED, cold=True, pair_ids=(0, 1)):
   """Build a domain randomizer over a given friction band.
 
   Pass a degenerate range like (0.05, 0.05) to pin mu exactly -- that is how
@@ -36,7 +55,9 @@ def make_randomizer(mu_range=MIXED, cold=True):
       # --- ICE: floor/foot tangential friction ---
       rng, key = jax.random.split(rng)
       friction = jax.random.uniform(key, minval=mu_lo, maxval=mu_hi)
-      pair_friction = model.pair_friction.at[0:2, 0:2].set(friction)
+      pair_friction = model.pair_friction
+      for pid in pair_ids:
+        pair_friction = pair_friction.at[pid, 0:2].set(friction)
 
       # --- COLD: grease thickens, so joint dry friction and damping rise ---
       lo, hi = (1.5, 3.0) if cold else (0.5, 2.0)

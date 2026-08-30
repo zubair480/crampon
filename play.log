@@ -1,0 +1,15 @@
+downloading policy-ice-s1.pkl from Zubair480/crampon-g1-ice ...
+Warp 1.16.0 initialized:
+   CUDA Toolkit 12.9, CUDA driver not available (NVRTC compilation available)
+   Devices:
+     "cpu"      : "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel"
+   Kernel cache:
+     \\?\C:\Users\zubai\AppData\Local\NVIDIA\warp\Cache\1.16.0
+Module mujoco.mjx.warp.ffi 65aac30 load on device 'cpu' took 5.81 ms  (cached)
+compiling policy ...
+mu=0.05  wind<=12.0 m/s  kp x0.8
+W/S fwd-back  A/D strafe  Q/E turn  X stop  R reset
+  physics  50.5 Hz | render  29.0 FPS | realtime 1.009
+  physics  50.2 Hz | render  29.0 FPS | realtime 1.004
+  physics  50.1 Hz | render  29.0 FPS | realtime 1.002
+  physics  50.1 Hz | render  28.6 FPS | realtime 1.002
