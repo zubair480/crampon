@@ -35,7 +35,9 @@ def default_config() -> config_dict.ConfigDict:
       action_repeat=1,
       action_scale=0.5,
       drop_from_height_prob=1.0,  # always start fallen; that is the task
-      settle_time=0.5,
+      drop_height=0.45,   # lower drop = less interpenetration on landing
+      joint_jitter=0.6,   # rad around the nominal pose, not the full range
+      settle_time=0.8,
       soft_joint_pos_limit_factor=0.95,
       restricted_joint_range=False,
       noise_config=config_dict.create(
@@ -56,7 +58,7 @@ def default_config() -> config_dict.ConfigDict:
       ),
       impl="jax",
       naconmax=30 * 8192,
-      njmax=600,  # a fallen humanoid makes far more contacts than a walking one
+      njmax=900,  # a fallen humanoid makes far more contacts than a walking one
   )
 
 
@@ -94,6 +96,8 @@ class G1Getup(g1_base.G1Env):
     self._z_des = 0.78  # G1 standing torso height
     self._nu = self._mjx_model.nu
     self._imu_site = self._mj_model.site("imu_in_pelvis").id
+    self._drop_h = self._config.drop_height
+    self._joint_jitter = self._config.joint_jitter
 
   def _get_random_qpos(self, rng: jax.Array) -> jax.Array:
     """Drop the robot from 0.6 m at a uniformly random orientation.
@@ -103,13 +107,21 @@ class G1Getup(g1_base.G1Env):
     """
     rng, ori_rng, joint_rng = jax.random.split(rng, 3)
     qpos = jp.zeros(self.mjx_model.nq)
-    qpos = qpos.at[2].set(0.6)
+    qpos = qpos.at[2].set(self._drop_h)
     quat = jax.random.normal(ori_rng, (4,))
     quat = quat / (jp.linalg.norm(quat) + 1e-6)
     qpos = qpos.at[3:7].set(quat)
+    # Perturb around the nominal pose rather than sampling each joint uniformly
+    # across its full range. Go1Getup can do the latter safely -- a quadruped
+    # has 12 joints and no arms. A 29-DoF humanoid sampled that way produces
+    # deeply self-intersecting configurations: measured over 400 resets, qacc
+    # reached 5.2e4 with 3/400 above 1e4, and at 8192 parallel envs those
+    # blow the physics to NaN within a few million steps.
+    jitter = jax.random.uniform(
+        joint_rng, (self._nu,), minval=-self._joint_jitter,
+        maxval=self._joint_jitter)
     qpos = qpos.at[7:].set(
-        jax.random.uniform(joint_rng, (self._nu,),
-                           minval=self._lowers, maxval=self._uppers))
+        jp.clip(self._default_pose + jitter, self._lowers, self._uppers))
     return qpos
 
   def reset(self, rng: jax.Array) -> mjx_env.State:
