@@ -63,6 +63,10 @@ def main() -> None:
   ap.add_argument("--mu", type=float, default=0.6)
   ap.add_argument("--wind", type=float, default=12.0)
   ap.add_argument("--kp-scale", type=float, default=0.8, help="cold derate")
+  ap.add_argument("--vx", type=float, default=0.8,
+                  help="forward speed to start walking at; 0 to stand still")
+  ap.add_argument("--fps", type=float, default=30.0,
+                  help="render cap. Physics always runs at 50 Hz regardless.")
   args = ap.parse_args()
 
   path = args.policy
@@ -83,7 +87,7 @@ def main() -> None:
               ground=scene.SNOW if args.mu > 0.3 else scene.ICE)
   scene.set_realtime_quality(runner.model)
 
-  cmd = np.zeros(3, dtype=np.float32)
+  cmd = np.array([args.vx, 0.0, 0.0], dtype=np.float32)
   flags = {"reset": False}
 
   def key_callback(keycode):
@@ -137,6 +141,15 @@ def main() -> None:
     wall0 = time.perf_counter()
     MAX_CATCHUP = 6  # if we fall far behind, drop time instead of spiralling
 
+    # Render cap. sync() blocks on vsync and its cost scales with window area,
+    # so on a big window it can eat the whole frame. Physics is only 2.3 ms a
+    # step, so we let it run at a true 50 Hz and simply draw less often. A
+    # steady 30 FPS reads as smoother than an irregular 50.
+    render_dt = 1.0 / args.fps
+    next_render = 0.0
+    n_steps = n_frames = 0
+    next_report = 2.0
+
     while viewer.is_running():
       if flags["reset"]:
         runner.reset()
@@ -168,8 +181,19 @@ def main() -> None:
       if sim_t < elapsed - 0.5:  # too far behind to recover; resync the clock
         sim_t = elapsed
 
-      viewer.cam.lookat[:] = runner.data.qpos[:3]
-      viewer.sync()
+      n_steps += n
+      if elapsed >= next_render:
+        viewer.cam.lookat[:] = runner.data.qpos[:3]
+        viewer.sync()
+        n_frames += 1
+        next_render = elapsed + render_dt
+      else:
+        time.sleep(0.001)
+
+      if elapsed >= next_report:
+        print(f"  physics {n_steps/elapsed:5.1f} Hz | render {n_frames/elapsed:5.1f} FPS"
+              f" | realtime {(n_steps*dt)/elapsed:.3f}", flush=True)
+        next_report = elapsed + 2.0
 
 
 if __name__ == "__main__":
