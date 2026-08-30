@@ -10,3 +10,6 @@ mujoco_playground/
 
 # PowerPoint lock files
 ~$*
+
+# viewer log
+khumbu_view.log

@@ -38,8 +38,7 @@ def main():
   ap.add_argument("--wind", type=float, default=8.0, help="max gust, m/s")
   ap.add_argument("--vx", type=float, default=0.8, help="0 to stand still")
   ap.add_argument("--fps", type=float, default=60.0,
-                  help="render cap. Measured: 60 costs nothing -- physics holds
-                       50 Hz and realtime 1.000 either way.")
+                  help="render cap; 60 costs nothing here")
   args = ap.parse_args()
 
   cfg = default_config()
