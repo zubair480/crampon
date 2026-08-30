@@ -117,7 +117,7 @@ def main() -> None:
       key, k = jax.random.split(key)
       act, _ = inference_fn(st.obs, k)
       st = step(st, act)
-    ups.append(float(-eval_env.get_gravity(st.data, "torso")[-1]))
+    ups.append(float(eval_env.get_gravity(st.data, "torso")[-1]))
     heights.append(float(st.data.qpos[2]))
   ups, heights = np.array(ups), np.array(heights)
   success = float(((ups > 0.8) & (heights > 0.6)).mean())

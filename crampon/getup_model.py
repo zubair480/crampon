@@ -23,6 +23,8 @@ import mujoco
 from mujoco_playground._src.locomotion.g1 import base as g1_base
 
 ROBOT_XML = "g1_mjx_feetonly.xml"
+FLAT_SCENE = "scene_mjx_feetonly_flat_terrain.xml"
+ROUGH_SCENE = "scene_mjx_feetonly_rough_terrain.xml"
 
 # New collision primitives, as (body, name, size, fromto). Capsules, not
 # meshes: MJX contact cost scales badly with convex meshes, and for getup what
@@ -54,7 +56,8 @@ def _insert_geom(xml: str, body: str, name: str, size: float, fromto: str) -> st
   return xml[:j] + geom + xml[j:]
 
 
-def build_assets(mu: float = 0.6):
+def build_assets(mu: float = 0.6, scene_name: str = FLAT_SCENE,
+                 ridge_height: float = None):
   """Return (scene_xml, assets) with a G1 whose whole body can hit the floor."""
   assets = dict(g1_base.get_assets())
   xml = assets[ROBOT_XML].decode()
@@ -73,10 +76,18 @@ def build_assets(mu: float = 0.6):
   xml = xml.replace("</contact>", pairs + "\n  </contact>")
 
   assets[ROBOT_XML] = xml.encode()
-  scene = assets["scene_mjx_feetonly_flat_terrain.xml"].decode()
+  scene = assets[scene_name].decode()
+
+  if ridge_height is not None:
+    # hfield size is "x y zmax zbase"; the third number is peak ridge height.
+    # Stock rough terrain is 0.05 m, which barely disturbs a walking G1.
+    import re
+    scene = re.sub(r'(<hfield name="hfield" file="assets/hfield.png" size="[\d.]+ [\d.]+ )[\d.]+',
+                   lambda m: m.group(1) + str(ridge_height), scene)
   return scene, assets
 
 
-def build_model(mu: float = 0.6) -> mujoco.MjModel:
-  scene, assets = build_assets(mu)
+def build_model(mu: float = 0.6, scene_name: str = FLAT_SCENE,
+                ridge_height: float = None) -> mujoco.MjModel:
+  scene, assets = build_assets(mu, scene_name, ridge_height)
   return mujoco.MjModel.from_xml_string(scene, assets)

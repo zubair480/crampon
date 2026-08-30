@@ -35,14 +35,17 @@ class NativePolicyRunner:
   """Steps native MuJoCo with a trained policy in the loop."""
 
   def __init__(self, env, inference_fn, mu: float = 0.05, kp_scale: float = 1.0,
-               gait_freq: float = 1.4, cold_scale=None):
+               gait_freq: float = 1.4, cold_scale=None, model=None):
     # DEEP COPY, not a reference. This class mutates friction, damping and
     # servo gains in place; sharing env.mj_model meant every runner compounded
     # the previous one's scaling. Across a sweep the joint friction was
     # multiplied by 2.25 dozens of times until the robot was effectively
     # welded rigid and never fell -- every measurement read exactly 500 with
     # zero variance, which looked like a result and was an artefact.
-    self.model = copy.deepcopy(env.mj_model)
+    # `model` lets callers supply a different world -- rough terrain, or the
+    # full-body-contact variant needed for fall recovery -- while reusing the
+    # env only for its constants.
+    self.model = copy.deepcopy(model if model is not None else env.mj_model)
     self.data = mujoco.MjData(self.model)
     self.inference_fn = inference_fn
 
@@ -112,6 +115,36 @@ class NativePolicyRunner:
         "state": state.astype(np.float32),
         "privileged_state": np.zeros(self._priv_size, dtype=np.float32),
     }
+
+  def observe_getup(self) -> dict:
+    """The 93-dim observation the getup policy expects.
+
+    Different layout from the walking policy: no linear velocity, no velocity
+    command and no gait phase, since none of them mean anything while the
+    robot is lying on its back.
+    """
+    d = self.data
+    gravity = d.site_xmat[self._imu_site].reshape(3, 3).T @ np.array(
+        [0.0, 0.0, -1.0])
+    state = np.hstack([
+        d.sensordata[self._gyro],          # 3
+        gravity,                           # 3
+        d.qpos[7:] - self._default_pose,   # 29
+        d.qvel[6:],                        # 29
+        self.last_act,                     # 29
+    ])
+    priv = np.hstack([state, d.qpos[2:3], d.qvel[0:6]])
+    return {"state": state.astype(np.float32),
+            "privileged_state": priv.astype(np.float32)}
+
+  @property
+  def uprightness(self) -> float:
+    """+1 fully upright, -1 upside down. Same quantity the env terminates on.
+
+    NOT negated: upvector_torso reads [0,0,+1] standing and [0,0,-1] inverted,
+    and the env terminates when its z goes negative. Verified against the model.
+    """
+    return float(self.data.sensordata[self._up_torso][-1])
 
   def step(self, action: np.ndarray, wind_force=None) -> None:
     """Apply one control step: policy action -> joint targets -> physics."""

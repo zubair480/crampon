@@ -179,9 +179,11 @@ class G1Getup(g1_base.G1Env):
 
   # --- rewards -------------------------------------------------------------
   def _get_reward(self, data, action, info) -> Dict[str, jax.Array]:
-    # get_gravity returns the torso up-vector; its z is -1 when upright and
-    # +1 when upside down, so negate to get "uprightness".
-    up = -self.get_gravity(data, "torso")[-1]
+    # upvector_torso reads [0,0,+1] standing and [0,0,-1] inverted -- verified
+    # against the model, and consistent with the walking env terminating when
+    # its z goes negative. An earlier version negated this, which rewarded the
+    # robot for lying upside down.
+    up = self.get_gravity(data, "torso")[-1]
     height = data.qpos[2]
     upright = jp.clip(up, 0.0, 1.0)
     at_height = jp.exp(-10.0 * jp.square(height - self._z_des))
